@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+*.db
+.expo/
+ios/
+android/
+
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/lib/
+
+# OS
+.DS_Store
