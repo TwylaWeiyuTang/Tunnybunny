@@ -15,7 +15,11 @@ export default function GroupDetailScreen() {
   const { getExpensesForGroup, getDebtsForGroup } = useExpenseStore();
 
   const group = getGroup(id);
-  const expenses = getExpensesForGroup(id);
+  const rawExpenses = getExpensesForGroup(id);
+  // Deduplicate by ID (local + backend sync can create duplicates)
+  const expenses = rawExpenses.filter(
+    (e, i, arr) => arr.findIndex((x) => x.id === e.id) === i,
+  );
   const debts = getDebtsForGroup(id);
   const { address: myAddress } = useWalletStore();
 
@@ -23,7 +27,8 @@ export default function GroupDetailScreen() {
   const memberName = (addr: string) => {
     if (addr.toLowerCase() === myAddress?.toLowerCase()) return 'You';
     const member = group?.members.find((m) => m.address.toLowerCase() === addr.toLowerCase());
-    return member?.displayName || `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+    const name = member?.displayName && member.displayName !== 'You' ? member.displayName : undefined;
+    return name || `${addr.slice(0, 6)}...${addr.slice(-4)}`;
   };
 
   if (!group) {
@@ -49,8 +54,13 @@ export default function GroupDetailScreen() {
             {group.members.map((member, i) => {
               const isYou = member.address.toLowerCase() === myAddress?.toLowerCase();
               const color = AVATAR_COLORS[i % AVATAR_COLORS.length];
-              const initial = member.displayName
-                ? member.displayName[0].toUpperCase()
+              // Never use stored "You" as a real display name
+              const displayName = member.displayName && member.displayName !== 'You'
+                ? member.displayName
+                : undefined;
+              const label = isYou ? 'You' : displayName || `${member.address.slice(0, 6)}...${member.address.slice(-4)}`;
+              const initial = isYou ? 'Y' : displayName
+                ? displayName[0].toUpperCase()
                 : member.address.slice(2, 4).toUpperCase();
 
               return (
@@ -59,9 +69,9 @@ export default function GroupDetailScreen() {
                     <Text style={styles.memberInitial}>{initial}</Text>
                   </View>
                   <Text style={styles.memberName} numberOfLines={1}>
-                    {isYou ? 'You' : member.displayName || `${member.address.slice(0, 6)}...${member.address.slice(-4)}`}
+                    {label}
                   </Text>
-                  {member.displayName && !isYou && (
+                  {displayName && !isYou && (
                     <Text style={styles.memberAddr} numberOfLines={1}>
                       {member.address.slice(0, 6)}...{member.address.slice(-4)}
                     </Text>
@@ -100,9 +110,17 @@ export default function GroupDetailScreen() {
           expenses.map((item) => (
             <View key={item.id} style={styles.expenseCard}>
               <View style={styles.expenseInfo}>
-                <Text style={styles.expenseDesc}>{item.description}</Text>
+                <View style={styles.expenseDescRow}>
+                  <Text style={styles.expenseDesc}>{item.description}</Text>
+                  {item.splitType === 'roulette' && (
+                    <View style={styles.rouletteBadge}>
+                      <FontAwesome name="random" size={10} color="#d63031" />
+                    </View>
+                  )}
+                </View>
                 <Text style={styles.expensePayer}>
                   Paid by {memberName(item.paidBy)}
+                  {item.splitType === 'roulette' ? ' · Roulette split' : ''}
                 </Text>
               </View>
               <Text style={styles.expenseAmount}>
@@ -116,18 +134,31 @@ export default function GroupDetailScreen() {
         <View style={{ height: 80, backgroundColor: 'transparent' }} />
       </ScrollView>
 
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() =>
-          router.push({
-            pathname: '/group/add-expense',
-            params: { groupId: id },
-          })
-        }
-      >
-        <FontAwesome name="plus" size={20} color="#fff" />
-        <Text style={styles.fabText}>Add Expense</Text>
-      </TouchableOpacity>
+      <View style={styles.fabRow}>
+        <TouchableOpacity
+          style={styles.shareBtn}
+          onPress={() =>
+            router.push({
+              pathname: '/group/share',
+              params: { groupId: id },
+            })
+          }
+        >
+          <FontAwesome name="qrcode" size={20} color="#6C5CE7" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.fab}
+          onPress={() =>
+            router.push({
+              pathname: '/group/add-expense',
+              params: { groupId: id },
+            })
+          }
+        >
+          <FontAwesome name="plus" size={20} color="#fff" />
+          <Text style={styles.fabText}>Add Expense</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -227,9 +258,23 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'transparent',
   },
+  expenseDescRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'transparent',
+  },
   expenseDesc: {
     fontSize: 15,
     fontWeight: '500',
+  },
+  rouletteBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#d6303118',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   expensePayer: {
     fontSize: 13,
@@ -240,11 +285,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  fab: {
+  fabRow: {
     position: 'absolute',
     bottom: 24,
     left: 16,
     right: 16,
+    flexDirection: 'row',
+    gap: 10,
+    backgroundColor: 'transparent',
+  },
+  shareBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#6C5CE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  fab: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

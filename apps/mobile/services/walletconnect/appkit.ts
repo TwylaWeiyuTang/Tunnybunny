@@ -83,6 +83,20 @@ const polygonAmoy = {
   testnet: true,
 };
 
+const base = {
+  id: 8453,
+  name: 'Base',
+  chainNamespace: 'eip155' as const,
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: {
+    default: { http: ['https://mainnet.base.org'] },
+  },
+  blockExplorers: {
+    default: { name: 'BaseScan', url: 'https://basescan.org' },
+  },
+  testnet: false,
+};
+
 // Ethereum mainnet is required so MetaMask (which defaults to mainnet)
 // can match accounts during WalletConnect session establishment.
 const ethereum = {
@@ -99,7 +113,21 @@ const ethereum = {
   testnet: false,
 };
 
-export const networks = [ethereum, baseSepolia, ethereumSepolia, arbitrumSepolia, polygonAmoy] as const;
+const arbitrum = {
+  id: 42161,
+  name: 'Arbitrum One',
+  chainNamespace: 'eip155' as const,
+  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  rpcUrls: {
+    default: { http: ['https://arbitrum-one-rpc.publicnode.com'] },
+  },
+  blockExplorers: {
+    default: { name: 'Arbiscan', url: 'https://arbiscan.io' },
+  },
+  testnet: false,
+};
+
+export const networks = [arbitrum, base, ethereum, baseSepolia, ethereumSepolia, arbitrumSepolia, polygonAmoy] as const;
 
 // TODO: Replace with your Reown project ID from https://dashboard.reown.com/
 const projectId = process.env.EXPO_PUBLIC_REOWN_PROJECT_ID || 'YOUR_PROJECT_ID';
@@ -124,7 +152,7 @@ export function getAppKit() {
       projectId,
       metadata,
       networks,
-      defaultNetwork: baseSepolia,
+      defaultNetwork: arbitrum,
       adapters: [ethersAdapter],
       storage: appKitStorage,
       features: {

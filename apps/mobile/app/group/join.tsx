@@ -1,39 +1,36 @@
 import { useState, useEffect } from 'react';
-import { StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 
 import { Text, View } from '@/components/Themed';
-import { useSettlementStore } from '@/store/settlement';
-import { useWalletStore } from '@/store/wallet';
-import { parsePOSQR, isPOSQR } from '@/services/walletconnect/pos';
+import { useGroupStore, type Group } from '@/store/groups';
+import { useExpenseStore, type Expense } from '@/store/expenses';
 
-interface TunnyBunnyPayload {
-  app: 'tunnybunny';
-  to: string;
-  amount: number;
-  chain: number;
-  groupId: string | null;
+interface GroupPayload {
+  app: 'tunnybunny-group';
+  group: Group;
+  expenses: Expense[];
 }
 
-function isValidPayload(data: any): data is TunnyBunnyPayload {
+function isValidPayload(data: any): data is GroupPayload {
   return (
     data &&
-    data.app === 'tunnybunny' &&
-    typeof data.to === 'string' &&
-    data.to.startsWith('0x') &&
-    typeof data.amount === 'number' &&
-    data.amount > 0
+    data.app === 'tunnybunny-group' &&
+    data.group &&
+    typeof data.group.id === 'string' &&
+    typeof data.group.name === 'string' &&
+    Array.isArray(data.group.members) &&
+    Array.isArray(data.expenses)
   );
 }
 
-export default function ScanScreen() {
+export default function JoinGroupScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
-  const [resolving, setResolving] = useState(false);
-  const { setSettlement } = useSettlementStore();
-  const { address } = useWalletStore();
+  const { groups, addGroup } = useGroupStore();
+  const { addExpense } = useExpenseStore();
 
   useEffect(() => {
     if (!permission?.granted) {
@@ -41,77 +38,48 @@ export default function ScanScreen() {
     }
   }, [permission]);
 
-  const handleBarCodeScanned = async ({ data }: { data: string }) => {
+  const handleBarCodeScanned = ({ data }: { data: string }) => {
     if (scanned) return;
     setScanned(true);
 
-    // Quick check: is this a POS QR?
-    if (isPOSQR(data)) {
-      setResolving(true);
-      try {
-        const posPayment = await parsePOSQR(data, address || undefined);
-        setResolving(false);
-        if (posPayment) {
-          router.replace({
-            pathname: '/settle/split-scan',
-            params: {
-              merchantAddress: posPayment.merchantAddress,
-              merchantName: posPayment.merchantName || '',
-              amountRaw: posPayment.amountRaw,
-              chainId: posPayment.chainId.toString(),
-              paymentId: posPayment.paymentId || '',
-              collectUrl: posPayment.collectUrl || '',
-            },
-          });
-          return;
-        }
-      } catch {
-        setResolving(false);
-      }
-    }
-
-    // Try TunnyBunny peer-to-peer payment format
     try {
       const payload = JSON.parse(data);
 
-      // TunnyBunny split session (from share QR)
-      if (payload.app === 'tunnybunny-split') {
-        router.replace({
-          pathname: '/settle/split-status',
-          params: {
-            joinSessionId: payload.contractSessionId?.toString(),
-            joinMerchant: payload.merchantAddress || '',
-            joinTotal: payload.totalAmountRaw || '0',
-            joinGroupName: payload.groupName || '',
-            joinParticipants: JSON.stringify(payload.participants || []),
-          },
-        });
-        return;
-      }
-
       if (!isValidPayload(payload)) {
-        Alert.alert('Invalid QR', 'This QR code is not a recognized payment request.', [
+        Alert.alert('Invalid QR', 'This is not a TunnyBunny group invite.', [
           { text: 'Scan Again', onPress: () => setScanned(false) },
         ]);
         return;
       }
 
-      setSettlement({
-        to: payload.to,
-        amount: payload.amount,
-        destChain: payload.chain,
-        groupId: payload.groupId,
-      });
+      // Check if group already exists locally
+      if (groups.some((g) => g.id === payload.group.id)) {
+        Alert.alert('Already Joined', `You're already in "${payload.group.name}".`, [
+          { text: 'OK', onPress: () => router.back() },
+        ]);
+        return;
+      }
 
-      router.replace({
-        pathname: '/settle/[id]',
-        params: {
-          id: payload.groupId || 'scan',
-          from: '',
-          to: payload.to,
-          amount: payload.amount.toString(),
-        },
-      });
+      // Import group and all its expenses
+      addGroup(payload.group);
+      for (const expense of payload.expenses) {
+        addExpense(expense);
+      }
+
+      Alert.alert(
+        'Joined Group!',
+        `You've joined "${payload.group.name}" with ${payload.group.members.length} members and ${payload.expenses.length} expenses.`,
+        [
+          {
+            text: 'View Group',
+            onPress: () =>
+              router.replace({
+                pathname: '/group/[id]',
+                params: { id: payload.group.id },
+              }),
+          },
+        ],
+      );
     } catch {
       Alert.alert('Invalid QR', 'Could not read QR code data.', [
         { text: 'Scan Again', onPress: () => setScanned(false) },
@@ -133,7 +101,7 @@ export default function ScanScreen() {
         <View style={styles.permissionCard}>
           <FontAwesome name="camera" size={48} color="#999" />
           <Text style={styles.permissionText}>
-            Camera access is needed to scan payment QR codes
+            Camera access is needed to scan group invite QR codes
           </Text>
           <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission}>
             <Text style={styles.permissionBtnText}>Grant Permission</Text>
@@ -152,17 +120,11 @@ export default function ScanScreen() {
       >
         <View style={styles.overlay}>
           <Text style={styles.instructions}>
-            {resolving ? 'Resolving payment...' : 'Scan a payment QR code'}
+            Scan a TunnyBunny group invite
           </Text>
-          {resolving ? (
-            <ActivityIndicator size="large" color="#6C5CE7" />
-          ) : (
-            <View style={styles.frame} />
-          )}
+          <View style={styles.frame} />
           <Text style={styles.subtext}>
-            {resolving
-              ? 'Fetching merchant details from WalletConnect Pay'
-              : 'Supports WalletConnect Pay POS, ERC-681,\nand TunnyBunny payment requests'}
+            Point your camera at the QR code{'\n'}shown by a group member
           </Text>
         </View>
       </CameraView>

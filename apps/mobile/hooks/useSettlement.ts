@@ -1,13 +1,12 @@
 import { useCallback } from 'react';
 import { Platform } from 'react-native';
-import type { BrowserProvider } from 'ethers';
+import { BrowserProvider } from 'ethers';
 import { useSettlementStore } from '@/store/settlement';
 import { useWalletStore } from '@/store/wallet';
 import { executePayment } from '@/services/walletconnect/pay';
 import { executeSwap } from '@/services/uniswap/swap';
 import { getUsdcAddress } from '@/services/uniswap/tokens';
-import { bridgeUSDC } from '@/services/arc/bridge';
-import type { ArcChainId } from '@/services/arc/client';
+import { bridgeUSDC, type ArcChainId } from '@/services/arc/bridge';
 import { sendPrivatePayment } from '@/services/unlink/private';
 
 // Conditionally import AppKit hook (only available on native)
@@ -37,7 +36,7 @@ export function useSettlement() {
     }
 
     try {
-      const ethersProvider = provider as unknown as BrowserProvider;
+      const ethersProvider = new BrowserProvider(provider as any);
       const needsSwap = store.tokenSymbol !== 'USDC';
       const needsBridge = store.sourceChain !== store.destChain;
 

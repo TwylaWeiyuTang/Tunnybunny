@@ -6,8 +6,8 @@ export const groupsRouter = Router();
 
 // Create a group
 groupsRouter.post('/', (req, res) => {
-  const { name, creator, members } = req.body;
-  const id = randomUUID();
+  const { id: clientId, name, creator, members } = req.body;
+  const id = clientId || randomUUID();
   const db = getDb();
 
   const insertGroup = db.prepare(
@@ -76,12 +76,12 @@ groupsRouter.post('/:id/expenses', (req, res) => {
   const transaction = db.transaction(() => {
     insertExpense.run(id, groupId, amount, description, paidBy, splitType || 'equal');
 
-    if (splitType === 'custom' && shares) {
+    if ((splitType === 'custom' || splitType === 'roulette') && shares) {
       for (const [address, shareAmount] of Object.entries(shares)) {
         insertSplit.run(id, address, shareAmount);
       }
     } else {
-      // Equal split
+      // Equal split (default)
       const perPerson = Math.floor(amount / splitAmong.length);
       for (const address of splitAmong) {
         insertSplit.run(id, address, perPerson);

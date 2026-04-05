@@ -1,8 +1,17 @@
+import { useState } from 'react';
 import { StyleSheet, TouchableOpacity, Platform, ScrollView } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 
 import { Text, View } from '@/components/Themed';
 import { useWalletStore } from '@/store/wallet';
+
+const SETTLEMENT_CHAINS = [
+  { id: 42161, name: 'Arbitrum One' },
+  { id: 8453, name: 'Base' },
+  { id: 1, name: 'Ethereum' },
+  { id: 84532, name: 'Base Sepolia' },
+  { id: 11155111, name: 'Ethereum Sepolia' },
+];
 
 // AppKit hooks only work on native (not during static web export)
 let useAppKit: () => { open: (opts?: { view?: string }) => void; disconnect: () => void };
@@ -21,6 +30,8 @@ export default function ProfileScreen() {
   const { open, disconnect } = useAppKit();
   const appKitAccount = useAppKitAccount();
   const walletStore = useWalletStore();
+  const [settlementChain, setSettlementChain] = useState(42161);
+  const [showChainPicker, setShowChainPicker] = useState(false);
 
   // Use AppKit state on native, Zustand fallback on web
   const isConnected = Platform.OS !== 'web' ? appKitAccount.isConnected : walletStore.isConnected;
@@ -93,11 +104,52 @@ export default function ProfileScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Settings</Text>
 
-        <TouchableOpacity style={styles.settingRow}>
+        <TouchableOpacity
+          style={styles.settingRow}
+          onPress={() => setShowChainPicker(!showChainPicker)}
+        >
           <FontAwesome name="chain" size={18} color="#6C5CE7" />
           <Text style={styles.settingLabel}>Preferred Settlement Chain</Text>
-          <Text style={styles.settingValue}>Base</Text>
+          <View style={styles.settingValueRow}>
+            <Text style={styles.settingValue}>
+              {SETTLEMENT_CHAINS.find((c) => c.id === settlementChain)?.name}
+            </Text>
+            <FontAwesome
+              name={showChainPicker ? 'chevron-up' : 'chevron-down'}
+              size={12}
+              color="#999"
+            />
+          </View>
         </TouchableOpacity>
+        {showChainPicker && (
+          <View style={styles.chainPicker}>
+            {SETTLEMENT_CHAINS.map((chain) => (
+              <TouchableOpacity
+                key={chain.id}
+                style={[
+                  styles.chainOption,
+                  settlementChain === chain.id && styles.chainOptionSelected,
+                ]}
+                onPress={() => {
+                  setSettlementChain(chain.id);
+                  setShowChainPicker(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.chainOptionText,
+                    settlementChain === chain.id && styles.chainOptionTextSelected,
+                  ]}
+                >
+                  {chain.name}
+                </Text>
+                {settlementChain === chain.id && (
+                  <FontAwesome name="check" size={14} color="#6C5CE7" />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         <TouchableOpacity style={styles.settingRow}>
           <FontAwesome name="eye-slash" size={18} color="#6C5CE7" />
@@ -232,9 +284,40 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
   },
+  settingValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'transparent',
+  },
   settingValue: {
     fontSize: 14,
     color: '#999',
+  },
+  chainPicker: {
+    marginLeft: 30,
+    marginBottom: 8,
+    backgroundColor: 'transparent',
+  },
+  chainOption: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  chainOptionSelected: {
+    backgroundColor: '#6C5CE711',
+  },
+  chainOptionText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  chainOptionTextSelected: {
+    color: '#6C5CE7',
+    fontWeight: '600',
   },
   integrationRow: {
     flexDirection: 'row',

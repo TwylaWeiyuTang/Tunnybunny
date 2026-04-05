@@ -9,6 +9,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
@@ -77,6 +78,14 @@ function RootLayoutNav() {
           options={{ title: 'Add Expense', presentation: 'modal' }}
         />
         <Stack.Screen
+          name="group/share"
+          options={{ title: 'Share Group', presentation: 'modal' }}
+        />
+        <Stack.Screen
+          name="group/join"
+          options={{ title: 'Join Group', headerTransparent: true, headerTintColor: '#fff' }}
+        />
+        <Stack.Screen
           name="settle/[id]"
           options={{ title: 'Settle Up', presentation: 'modal' }}
         />
@@ -96,6 +105,18 @@ function RootLayoutNav() {
           name="settle/scan"
           options={{ title: 'Scan to Pay', headerTransparent: true, headerTintColor: '#fff' }}
         />
+        <Stack.Screen
+          name="settle/split-scan"
+          options={{ title: 'Split Bill', presentation: 'modal' }}
+        />
+        <Stack.Screen
+          name="settle/split-status"
+          options={{ title: 'Split Status' }}
+        />
+        <Stack.Screen
+          name="settle/wc-pay"
+          options={{ title: 'Pay Merchant', presentation: 'modal' }}
+        />
       </Stack>
     </ThemeProvider>
   );
@@ -108,23 +129,27 @@ function RootLayoutNav() {
     const { AppKitProvider, AppKit } = require('@reown/appkit-react-native');
     const { getAppKit } = require('@/services/walletconnect/appkit');
     return (
-      <SafeAreaProvider>
-        <QueryClientProvider client={queryClient}>
-          <AppKitProvider instance={getAppKit()}>
-            {content}
-            <AppKit />
-          </AppKitProvider>
-        </QueryClientProvider>
-      </SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <QueryClientProvider client={queryClient}>
+            <AppKitProvider instance={getAppKit()}>
+              {content}
+              <AppKit />
+            </AppKitProvider>
+          </QueryClientProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
     );
   }
 
   // Web: render without AppKit wrapper
   return (
-    <SafeAreaProvider>
-      <QueryClientProvider client={queryClient}>
-        {content}
-      </QueryClientProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <QueryClientProvider client={queryClient}>
+          {content}
+        </QueryClientProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

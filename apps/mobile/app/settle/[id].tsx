@@ -1,19 +1,17 @@
 import { useState, useEffect } from 'react';
-import { StyleSheet, TouchableOpacity, Switch } from 'react-native';
+import { StyleSheet, TouchableOpacity, Switch, ActivityIndicator, ScrollView } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 
 import { Text, View } from '@/components/Themed';
 import { useSettlementStore } from '@/store/settlement';
 import { useWalletStore } from '@/store/wallet';
-import { getUsdcBalance } from '@/services/arc/bridge';
-import type { ArcChainId } from '@/services/arc/client';
-
-const CHAINS = [
-  { id: 84532 as ArcChainId, name: 'Base Sepolia', icon: 'circle' as const },
-  { id: 11155111 as ArcChainId, name: 'Ethereum Sepolia', icon: 'diamond' as const },
-  { id: 421614 as ArcChainId, name: 'Arbitrum Sepolia', icon: 'bolt' as const },
-];
+import {
+  getAggregatedBalance,
+  computeRoute,
+  type ChainBalance,
+  type RoutePlan,
+} from '@/services/arc/router';
 
 export default function SettlementFlowScreen() {
   const { id, from, to, amount } = useLocalSearchParams<{
@@ -24,7 +22,6 @@ export default function SettlementFlowScreen() {
   }>();
 
   const {
-    sourceChain,
     tokenSymbol,
     isPrivate,
     setSettlement,
@@ -32,24 +29,37 @@ export default function SettlementFlowScreen() {
   } = useSettlementStore();
   const { address } = useWalletStore();
 
-  // Fetch USDC balances per chain via Arc
-  const [balances, setBalances] = useState<Record<number, string>>({});
+  const [balances, setBalances] = useState<ChainBalance[]>([]);
+  const [route, setRoute] = useState<RoutePlan | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const amountCents = parseInt(amount || '0');
+  const amountUsd = (amountCents / 100).toFixed(2);
+  const amountNum = amountCents / 100;
+
+  // Fetch aggregated USDC balance across all chains
   useEffect(() => {
     if (!address) return;
-    CHAINS.forEach(async (chain) => {
-      try {
-        const bal = await getUsdcBalance(chain.id, address as `0x${string}`);
-        setBalances((prev) => ({ ...prev, [chain.id]: bal }));
-      } catch {
-        setBalances((prev) => ({ ...prev, [chain.id]: '...' }));
-      }
-    });
-  }, [address]);
+    setLoading(true);
+    getAggregatedBalance(address as `0x${string}`)
+      .then((bals) => {
+        setBalances(bals);
+        const plan = computeRoute(bals, amountNum);
+        setRoute(plan);
+        // Auto-set source chain to the primary route step
+        if (plan.steps.length > 0) {
+          setSettlement({ sourceChain: plan.steps[0].chainId });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [address, amountNum]);
 
-  const amountUsd = (parseInt(amount || '0') / 100).toFixed(2);
+  const totalBalance = balances.reduce((s, b) => s + b.balance, 0);
+  const hasEnough = totalBalance >= amountNum;
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
       <View style={styles.summaryCard}>
         <Text style={styles.summaryLabel}>Paying</Text>
         <Text style={styles.summaryAmount}>${amountUsd}</Text>
@@ -58,11 +68,76 @@ export default function SettlementFlowScreen() {
         </Text>
       </View>
 
+      {/* Unified USDC Balance (chain abstracted) */}
+      <View style={styles.balanceCard}>
+        <View style={styles.balanceHeader}>
+          <FontAwesome name="database" size={16} color="#6C5CE7" />
+          <Text style={styles.balanceTitle}>Your USDC Liquidity</Text>
+        </View>
+        {loading ? (
+          <ActivityIndicator color="#6C5CE7" style={{ marginVertical: 12 }} />
+        ) : (
+          <>
+            <Text style={styles.totalBalance}>${totalBalance.toFixed(2)}</Text>
+            <Text style={styles.totalBalanceLabel}>across {balances.filter(b => b.balance > 0).length} chains</Text>
+            <View style={styles.chainBreakdown}>
+              {balances.map((b) => (
+                <View key={b.chainId} style={styles.chainPill}>
+                  <View style={[styles.chainDot, b.balance > 0 && styles.chainDotActive]} />
+                  <Text style={styles.chainPillText}>
+                    {b.chainName.replace(' Sepolia', '')}: ${b.balance.toFixed(2)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
+      </View>
+
+      {/* Smart Route (auto-computed) */}
+      {route && !loading && (
+        <View style={styles.routeCard}>
+          <View style={styles.routeHeader}>
+            <FontAwesome name="random" size={14} color="#6C5CE7" />
+            <Text style={styles.routeTitle}>Auto-Route via Arc</Text>
+          </View>
+          {route.steps.map((step, i) => {
+            const isLocal = step.chainId === route.settlementChain;
+            return (
+              <View key={step.chainId} style={styles.routeStep}>
+                <View style={[styles.routeStepDot, isLocal ? styles.routeStepDotLocal : styles.routeStepDotBridge]} />
+                <View style={styles.routeStepInfo}>
+                  <Text style={styles.routeStepText}>
+                    ${step.amount.toFixed(2)} from {step.chainName.replace(' Sepolia', '')}
+                  </Text>
+                  <Text style={styles.routeStepHint}>
+                    {isLocal ? 'Direct transfer' : 'Bridge via Arc CCTP'}
+                  </Text>
+                </View>
+                {!isLocal && (
+                  <FontAwesome name="arrow-right" size={12} color="#6C5CE7" />
+                )}
+              </View>
+            );
+          })}
+          {route.steps.length > 1 && (
+            <Text style={styles.routeNote}>
+              Arc aggregates your USDC across chains into one payment
+            </Text>
+          )}
+          {!route.needsBridge && (
+            <Text style={styles.routeNote}>
+              No bridging needed — USDC already on settlement chain
+            </Text>
+          )}
+        </View>
+      )}
+
       {/* Token Selection */}
       <TouchableOpacity
         style={styles.optionRow}
         onPress={() => {
-          setSettlement({ groupId: id, from, to, amount: parseInt(amount || '0') });
+          setSettlement({ groupId: id, from, to, amount: amountCents });
           router.push('/settle/token-select');
         }}
       >
@@ -75,37 +150,6 @@ export default function SettlementFlowScreen() {
           <FontAwesome name="chevron-right" size={14} color="#999" />
         </View>
       </TouchableOpacity>
-
-      {/* Chain Selection */}
-      <Text style={styles.sectionTitle}>Pay from chain</Text>
-      {CHAINS.map((chain) => (
-        <TouchableOpacity
-          key={chain.id}
-          style={[
-            styles.chainRow,
-            sourceChain === chain.id && styles.chainSelected,
-          ]}
-          onPress={() => setSettlement({ sourceChain: chain.id })}
-        >
-          <FontAwesome name={chain.icon} size={16} color={sourceChain === chain.id ? '#6C5CE7' : '#999'} />
-          <View style={styles.chainInfo}>
-            <Text style={[
-              styles.chainName,
-              sourceChain === chain.id && styles.chainNameSelected,
-            ]}>
-              {chain.name}
-            </Text>
-            {balances[chain.id] !== undefined && (
-              <Text style={styles.chainBalance}>
-                {balances[chain.id]} USDC
-              </Text>
-            )}
-          </View>
-          {sourceChain === chain.id && (
-            <FontAwesome name="check" size={16} color="#6C5CE7" />
-          )}
-        </TouchableOpacity>
-      ))}
 
       {/* Privacy Toggle */}
       <View style={styles.privacyRow}>
@@ -128,31 +172,42 @@ export default function SettlementFlowScreen() {
 
       {/* Confirm Button */}
       <TouchableOpacity
-        style={styles.confirmBtn}
+        style={[styles.confirmBtn, !hasEnough && styles.confirmBtnDisabled]}
+        disabled={!hasEnough || loading}
         onPress={() => {
-          setSettlement({ groupId: id, from, to, amount: parseInt(amount || '0') });
+          setSettlement({
+            groupId: id,
+            from,
+            to,
+            amount: amountCents,
+            // Use first route step as source chain; settlement hook handles multi-step
+            sourceChain: route?.steps[0]?.chainId ?? 42161,
+          });
           router.push('/settle/confirm');
         }}
       >
         <Text style={styles.confirmBtnText}>
-          Review Payment
+          {!hasEnough ? 'Insufficient USDC' : 'Review Payment'}
         </Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  scrollContent: {
     padding: 16,
+    paddingBottom: 32,
   },
   summaryCard: {
     padding: 20,
     borderRadius: 16,
     backgroundColor: '#6C5CE711',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 16,
   },
   summaryLabel: {
     fontSize: 13,
@@ -170,6 +225,128 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontFamily: 'SpaceMono',
   },
+
+  // Unified balance card
+  balanceCard: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    marginBottom: 16,
+    backgroundColor: 'transparent',
+  },
+  balanceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+    backgroundColor: 'transparent',
+  },
+  balanceTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#999',
+    textTransform: 'uppercase',
+  },
+  totalBalance: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#00b894',
+  },
+  totalBalanceLabel: {
+    fontSize: 12,
+    color: '#999',
+    marginBottom: 12,
+  },
+  chainBreakdown: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    backgroundColor: 'transparent',
+  },
+  chainPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    backgroundColor: '#f5f5f5',
+  },
+  chainDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#ccc',
+  },
+  chainDotActive: {
+    backgroundColor: '#00b894',
+  },
+  chainPillText: {
+    fontSize: 12,
+    color: '#666',
+  },
+
+  // Route card
+  routeCard: {
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#6C5CE708',
+    borderWidth: 1,
+    borderColor: '#6C5CE733',
+    marginBottom: 16,
+  },
+  routeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+    backgroundColor: 'transparent',
+  },
+  routeTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6C5CE7',
+    textTransform: 'uppercase',
+  },
+  routeStep: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 6,
+    backgroundColor: 'transparent',
+  },
+  routeStepDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  routeStepDotLocal: {
+    backgroundColor: '#00b894',
+  },
+  routeStepDotBridge: {
+    backgroundColor: '#6C5CE7',
+  },
+  routeStepInfo: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  routeStepText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  routeStepHint: {
+    fontSize: 11,
+    color: '#999',
+  },
+  routeNote: {
+    fontSize: 11,
+    color: '#6C5CE7',
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+
+  // Token select
   optionRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -178,7 +355,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e0e0e0',
-    marginBottom: 24,
+    marginBottom: 16,
   },
   optionLeft: {
     flexDirection: 'row',
@@ -200,43 +377,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#6C5CE7',
   },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#999',
-    textTransform: 'uppercase',
-    marginBottom: 8,
-  },
-  chainRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    marginBottom: 8,
-    gap: 12,
-  },
-  chainSelected: {
-    borderColor: '#6C5CE7',
-    backgroundColor: '#6C5CE711',
-  },
-  chainInfo: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
-  chainName: {
-    fontSize: 15,
-  },
-  chainNameSelected: {
-    fontWeight: '600',
-    color: '#6C5CE7',
-  },
-  chainBalance: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 2,
-  },
+
+  // Privacy
   privacyRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -245,7 +387,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e0e0e0',
-    marginTop: 16,
+    marginBottom: 16,
     backgroundColor: 'transparent',
   },
   privacyInfo: {
@@ -268,13 +410,16 @@ const styles = StyleSheet.create({
     color: '#999',
     marginTop: 2,
   },
+
+  // Confirm
   confirmBtn: {
     backgroundColor: '#6C5CE7',
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
-    marginTop: 'auto',
-    marginBottom: 16,
+  },
+  confirmBtnDisabled: {
+    backgroundColor: '#ccc',
   },
   confirmBtnText: {
     color: '#fff',

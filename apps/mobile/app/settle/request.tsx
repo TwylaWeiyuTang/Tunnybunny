@@ -27,7 +27,7 @@ export default function RequestPaymentScreen() {
     app: 'tunnybunny',
     to: address,
     amount: amountCents,
-    chain: 84532, // Base Sepolia (default settlement chain)
+    chain: 42161, // Arbitrum One
     groupId: groupId || null,
   });
 
@@ -59,7 +59,7 @@ export default function RequestPaymentScreen() {
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Chain</Text>
-          <Text style={styles.detailValue}>Base Sepolia</Text>
+          <Text style={styles.detailValue}>Arbitrum One</Text>
         </View>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Token</Text>

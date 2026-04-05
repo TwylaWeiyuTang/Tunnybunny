@@ -17,10 +17,12 @@ export const PAYMENT_TOKENS: TokenInfo[] = [
     decimals: 6,
     icon: 'dollar',
     addresses: {
+      1: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+      8453: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      42161: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
       11155111: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
       84532: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
       421614: '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d',
-      80002: '0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582',
     },
   },
   {
@@ -29,6 +31,9 @@ export const PAYMENT_TOKENS: TokenInfo[] = [
     decimals: 18,
     icon: 'diamond',
     addresses: {
+      1: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
+      8453: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
+      42161: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
       11155111: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
       84532: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
       421614: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',

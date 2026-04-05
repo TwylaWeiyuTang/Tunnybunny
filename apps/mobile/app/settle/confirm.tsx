@@ -6,10 +6,12 @@ import { Text, View } from '@/components/Themed';
 import { useSettlement } from '@/hooks/useSettlement';
 
 const CHAIN_NAMES: Record<number, string> = {
+  1: 'Ethereum',
+  8453: 'Base',
+  42161: 'Arbitrum',
   84532: 'Base Sepolia',
   11155111: 'Ethereum Sepolia',
   421614: 'Arbitrum Sepolia',
-  80002: 'Polygon Amoy',
 };
 
 export default function ConfirmPaymentScreen() {

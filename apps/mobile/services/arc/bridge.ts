@@ -1,101 +1,77 @@
-import type { BrowserProvider } from 'ethers';
-import { parseUnits, type Hash } from 'viem';
-import { getPublicClient, getWalletClient, ARC_CHAINS, type ArcChainId } from './client';
+import { Contract, BrowserProvider, JsonRpcProvider, parseUnits } from 'ethers';
+import type { Hash } from 'viem';
 
-// USDC addresses per chain (testnet)
-const USDC_ADDRESSES: Record<number, `0x${string}`> = {
-  11155111: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
-  84532: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
-  421614: '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d',
+// USDC addresses per chain (mainnet)
+const USDC_ADDRESSES: Record<number, string> = {
+  1: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',     // Ethereum
+  8453: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',   // Base
+  42161: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',   // Arbitrum
 };
 
-// CCTP TokenMessenger addresses per chain (testnet)
-const TOKEN_MESSENGER: Record<number, `0x${string}`> = {
-  11155111: '0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5',
-  84532: '0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5',
-  421614: '0x9f3B8679c73C2Fef8b59B4f3444d4e156fb70AA5',
+// CCTP V2 TokenMessenger addresses (mainnet)
+const TOKEN_MESSENGER: Record<number, string> = {
+  1: '0xBd3fa81B58Ba92a82136038B25aDec7066af3155',
+  8453: '0x1682Ae6375C4E4A97e4B583BC394c861A46D8962',
+  42161: '0x19330d10D9Cc8751218eaf51E8885D058642E08A',
 };
 
 // CCTP domain IDs
 const CCTP_DOMAINS: Record<number, number> = {
-  11155111: 0, // Ethereum
-  84532: 6,    // Base
-  421614: 3,   // Arbitrum
+  1: 0,     // Ethereum
+  8453: 6,  // Base
+  42161: 3, // Arbitrum
+};
+
+const CHAIN_NAMES: Record<number, string> = {
+  1: 'Ethereum',
+  8453: 'Base',
+  42161: 'Arbitrum',
+};
+
+const RPC_URLS: Record<number, string> = {
+  1: 'https://ethereum-rpc.publicnode.com',
+  8453: 'https://mainnet.base.org',
+  42161: 'https://arbitrum-one-rpc.publicnode.com',
 };
 
 const ERC20_ABI = [
-  {
-    name: 'approve',
-    type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'spender', type: 'address' },
-      { name: 'amount', type: 'uint256' },
-    ],
-    outputs: [{ type: 'bool' }],
-  },
-  {
-    name: 'balanceOf',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'account', type: 'address' }],
-    outputs: [{ type: 'uint256' }],
-  },
-] as const;
+  'function approve(address spender, uint256 amount) returns (bool)',
+  'function balanceOf(address account) view returns (uint256)',
+];
 
 const TOKEN_MESSENGER_ABI = [
-  {
-    name: 'depositForBurn',
-    type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'amount', type: 'uint256' },
-      { name: 'destinationDomain', type: 'uint32' },
-      { name: 'mintRecipient', type: 'bytes32' },
-      { name: 'burnToken', type: 'address' },
-    ],
-    outputs: [{ type: 'uint64' }],
-  },
-] as const;
+  'function depositForBurn(uint256 amount, uint32 destinationDomain, bytes32 mintRecipient, address burnToken) returns (uint64)',
+];
+
+export type ArcChainId = 1 | 8453 | 42161;
 
 export interface BridgeParams {
   sourceChainId: ArcChainId;
   destChainId: ArcChainId;
-  amount: string; // USDC amount in human-readable (e.g., "10.50")
+  amount: string; // USDC amount in human-readable (e.g., "0.10")
   recipient: `0x${string}`;
   provider: BrowserProvider;
 }
 
 export interface BridgeResult {
-  approveTxHash: Hash;
-  bridgeTxHash: Hash;
+  approveTxHash: string;
+  bridgeTxHash: string;
   sourceChain: string;
   destChain: string;
   amount: string;
 }
 
-export type BridgeStatus = 'approving' | 'bridging' | 'waiting' | 'completed';
+export type BridgeStatus = 'switching' | 'approving' | 'bridging' | 'waiting' | 'completed';
 
 /**
- * Bridge USDC from one chain to another using Circle CCTP (Arc)
- *
- * Flow:
- * 1. Approve USDC spending by TokenMessenger
- * 2. Call depositForBurn on TokenMessenger
- * 3. CCTP attestation service picks up the burn
- * 4. USDC minted on destination chain
+ * Bridge USDC from one chain to another using Circle CCTP (Arc).
+ * Uses ethers.js with the connected wallet provider.
  */
 export async function bridgeUSDC(
   params: BridgeParams,
   onStatus?: (status: BridgeStatus) => void,
 ): Promise<BridgeResult> {
   const { sourceChainId, destChainId, amount, recipient, provider } = params;
-
-  const sourceChain = ARC_CHAINS[sourceChainId];
-  const destChain = ARC_CHAINS[destChainId];
-  if (!sourceChain || !destChain) {
-    throw new Error('Unsupported chain for Arc bridging');
-  }
 
   const usdcAddress = USDC_ADDRESSES[sourceChainId];
   const messengerAddress = TOKEN_MESSENGER[sourceChainId];
@@ -105,49 +81,54 @@ export async function bridgeUSDC(
     throw new Error('Missing contract addresses for bridge');
   }
 
-  const publicClient = getPublicClient(sourceChainId);
-  const walletClient = await getWalletClient(sourceChainId, provider);
-  const [account] = await walletClient.getAddresses();
+  console.log('Arc bridge:', { sourceChainId, destChainId, amount, recipient });
+  // Use the provider as-is — the caller must ensure the wallet
+  // is already on the correct source chain before calling this.
+  let ethersProvider: BrowserProvider;
+  if (provider instanceof BrowserProvider) {
+    ethersProvider = provider;
+  } else {
+    ethersProvider = new BrowserProvider(provider as any);
+  }
 
+  onStatus?.('approving');
+  const signer = await ethersProvider.getSigner();
+  console.log('Arc bridge: signer on', CHAIN_NAMES[sourceChainId]);
+
+  const rpcProvider = new JsonRpcProvider(RPC_URLS[sourceChainId]);
   const usdcAmount = parseUnits(amount, 6);
-
-  // Convert recipient address to bytes32 (pad to 32 bytes)
-  const mintRecipient = `0x000000000000000000000000${recipient.slice(2)}` as `0x${string}`;
+  const mintRecipient = '0x000000000000000000000000' + recipient.slice(2);
 
   // Step 1: Approve USDC
   onStatus?.('approving');
-  const approveHash = await walletClient.writeContract({
-    address: usdcAddress,
-    abi: ERC20_ABI,
-    functionName: 'approve',
-    args: [messengerAddress, usdcAmount],
-    account,
-  });
+  console.log('Approving USDC on', CHAIN_NAMES[sourceChainId], '...');
+  const usdc = new Contract(usdcAddress, ERC20_ABI, signer);
+  const approveTx = await usdc.approve(messengerAddress, usdcAmount);
+  console.log('Approve tx:', approveTx.hash);
+  await rpcProvider.waitForTransaction(approveTx.hash, 1, 120_000);
 
-  await publicClient.waitForTransactionReceipt({ hash: approveHash });
-
-  // Step 2: Deposit for burn (initiates cross-chain transfer)
+  // Step 2: Deposit for burn
   onStatus?.('bridging');
-  const bridgeHash = await walletClient.writeContract({
-    address: messengerAddress,
-    abi: TOKEN_MESSENGER_ABI,
-    functionName: 'depositForBurn',
-    args: [usdcAmount, destDomain, mintRecipient, usdcAddress],
-    account,
-  });
+  console.log('Depositing for burn...');
+  const messenger = new Contract(messengerAddress, TOKEN_MESSENGER_ABI, signer);
+  const bridgeTx = await messenger.depositForBurn(
+    usdcAmount,
+    destDomain,
+    mintRecipient,
+    usdcAddress,
+  );
+  console.log('Bridge tx:', bridgeTx.hash);
+  await rpcProvider.waitForTransaction(bridgeTx.hash, 1, 120_000);
 
-  await publicClient.waitForTransactionReceipt({ hash: bridgeHash });
-
-  // Step 3: CCTP attestation happens automatically (takes ~15-20 min on testnet)
+  // Step 3: CCTP attestation (~1-2 min on mainnet)
   onStatus?.('waiting');
-
   onStatus?.('completed');
 
   return {
-    approveTxHash: approveHash,
-    bridgeTxHash: bridgeHash,
-    sourceChain: sourceChain.name,
-    destChain: destChain.name,
+    approveTxHash: approveTx.hash,
+    bridgeTxHash: bridgeTx.hash,
+    sourceChain: CHAIN_NAMES[sourceChainId] || `Chain ${sourceChainId}`,
+    destChain: CHAIN_NAMES[destChainId] || `Chain ${destChainId}`,
     amount,
   };
 }
@@ -162,15 +143,12 @@ export async function getUsdcBalance(
   const usdcAddress = USDC_ADDRESSES[chainId];
   if (!usdcAddress) return '0';
 
-  const publicClient = getPublicClient(chainId);
-  const balance = await publicClient.readContract({
-    address: usdcAddress,
-    abi: ERC20_ABI,
-    functionName: 'balanceOf',
-    args: [address],
-  });
+  const rpcProvider = new JsonRpcProvider(RPC_URLS[chainId]);
+  const usdc = new Contract(usdcAddress, ERC20_ABI, rpcProvider);
+  const balance = await usdc.balanceOf(address);
 
-  // Convert from 6 decimals to human-readable
   const num = Number(balance) / 1e6;
   return num.toFixed(2);
 }
+
+export { CHAIN_NAMES, USDC_ADDRESSES };

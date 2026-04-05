@@ -29,8 +29,8 @@ const initialState: SettlementState = {
   amount: 0,
   tokenIn: '',
   tokenSymbol: 'USDC',
-  sourceChain: 84532, // Base Sepolia
-  destChain: 84532,
+  sourceChain: 42161, // Arbitrum One
+  destChain: 42161,
   isPrivate: false,
   status: 'idle',
   txHash: null,

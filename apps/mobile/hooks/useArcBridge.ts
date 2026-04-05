@@ -6,7 +6,7 @@ import {
   type BridgeResult,
   type BridgeStatus,
 } from '@/services/arc/bridge';
-import type { ArcChainId } from '@/services/arc/client';
+import type { ArcChainId } from '@/services/arc/bridge';
 
 interface UseArcBridgeResult {
   bridge: (params: {

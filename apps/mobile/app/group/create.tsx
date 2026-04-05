@@ -14,7 +14,7 @@ export default function CreateGroupScreen() {
   const [memberInput, setMemberInput] = useState('');
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [resolving, setResolving] = useState(false);
-  const { addGroup } = useGroupStore();
+  const { addGroup, syncGroupToBackend } = useGroupStore();
   const { address } = useWalletStore();
 
   const addMember = async () => {
@@ -71,11 +71,12 @@ export default function CreateGroupScreen() {
       id: randomUUID(),
       name: name.trim(),
       creator,
-      members: [{ address: creator, displayName: 'You' }, ...members],
+      members: [{ address: creator }, ...members],
       createdAt: Date.now(),
     };
 
     addGroup(group);
+    syncGroupToBackend(group);
     router.back();
   };
 
